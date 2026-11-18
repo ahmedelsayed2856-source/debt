@@ -98,6 +98,25 @@ details.card[open] summary{margin-bottom:8px}
   .rd{grid-column:1/-1}
 }
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+.sechead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.btn.small{padding:6px 12px;font-size:.85rem}
+#report{display:none}
+@media print{
+  @page{margin:14mm}
+  html,body{background:#fff!important;color:#000!important}
+  .wrap{display:none!important}
+  #report{display:block;color:#111;font-size:12pt;line-height:1.5;font-family:var(--font-body)}
+  #report h1{font-size:22pt;margin:0 0 4pt}
+  #report h2{font-size:15pt;margin:18pt 0 6pt;border-bottom:1px solid #999;padding-bottom:3pt}
+  #report h3{font-size:12.5pt;margin:0 0 4pt}
+  .r-date{margin:0 0 10pt;color:#555}
+  #report table{width:100%;border-collapse:collapse;margin-bottom:8pt}
+  #report th,#report td{border:1px solid #bbb;padding:4pt 8pt;text-align:right}
+  #report th{background:#eee}
+  .r-sum td:first-child{width:45%;font-weight:600}
+  .r-n{direction:ltr;text-align:left!important;white-space:nowrap}
+  .r-p{break-inside:avoid;margin-bottom:10pt}
+}
 </style>
 </head>
 <body>
@@ -149,7 +168,7 @@ details.card[open] summary{margin-bottom:8px}
   </form>
 
   <section style="display:flex;flex-direction:column;gap:12px" aria-label="الحسابات">
-    <h2>الحسابات</h2>
+    <div class="sechead"><h2>الحسابات</h2><button class="btn ghost small" type="button" id="btnPdf" data-a="pdf" hidden>تصدير PDF</button></div>
     <div class="notice" id="exBanner" hidden>
       <span>الأسماء اللي فيها «مثال» بيانات تجريبية.</span>
       <button class="btn ghost" type="button" data-a="clearEx">امسح الأمثلة</button>
@@ -176,6 +195,8 @@ details.card[open] summary{margin-bottom:8px}
     <p class="msg" id="backupMsg" role="status"></p>
   </details>
 </div>
+
+<div id="report" dir="rtl" lang="ar"></div>
 
 <script>
 (function(){
@@ -319,6 +340,7 @@ details.card[open] summary{margin-bottom:8px}
     $('#net').textContent=net===0?(ps.length?'الحساب متعادل.':''):(net>0?'الصافي لك: '+money(net):'الصافي عليك: '+money(-net));
     $('#names').innerHTML=ps.map(function(p){return '<option value="'+esc(p.name)+'">';}).join('');
     $('#exBanner').hidden=!state.entries.some(function(e){return e.ex;});
+    $('#btnPdf').hidden=!ps.length;
     var q=ui.q.trim();
     var shown=q?ps.filter(function(p){return p.name.indexOf(q)!==-1;}):ps;
     var list=$('#list');
@@ -381,6 +403,31 @@ details.card[open] summary{margin-bottom:8px}
     persist(); render();
   }
 
+  function buildReport(){
+    var ps=people(),toMe=0,iOwe=0;
+    ps.forEach(function(p){if(p.bal>0) toMe+=p.bal; else if(p.bal<0) iOwe-=p.bal;});
+    toMe=round2(toMe); iOwe=round2(iOwe);
+    var net=round2(toMe-iOwe);
+    var netTxt=net===0?'متعادل':(net>0?'لك '+money(net):'عليك '+money(-net));
+    var h='<h1>دفتر الديون</h1><p class="r-date">تاريخ التقرير: '+esc(fdate(today()))+'</p>';
+    h+='<table class="r-sum"><tr><td>لك عند الناس</td><td>'+money(toMe)+'</td></tr><tr><td>عليك للناس</td><td>'+money(iOwe)+'</td></tr><tr><td>الصافي</td><td>'+esc(netTxt)+'</td></tr></table>';
+    h+='<h2>الحسابات</h2><table class="r-t"><thead><tr><th>الاسم</th><th>الحالة</th><th>المبلغ</th></tr></thead><tbody>';
+    ps.forEach(function(p){
+      var st=p.bal>0?'لك عنده':(p.bal<0?'عليك له':'تم السداد');
+      h+='<tr><td>'+esc(p.name)+'</td><td>'+st+'</td><td class="r-n">'+(p.bal===0?'—':money(p.bal))+'</td></tr>';
+    });
+    h+='</tbody></table><h2>تفاصيل الحركات</h2>';
+    ps.forEach(function(p){
+      h+='<section class="r-p"><h3>'+esc(p.name)+'</h3><table class="r-t"><thead><tr><th>التاريخ</th><th>النوع</th><th>ملاحظة</th><th>المبلغ</th></tr></thead><tbody>';
+      p.list.forEach(function(e){
+        var kind=e.kind==='pay'?'سداد':(e.amt>0?'سلّفته':'استلفت');
+        h+='<tr><td>'+esc(fdate(e.date))+'</td><td>'+kind+'</td><td>'+esc(e.note||'')+'</td><td class="r-n">'+(e.amt>0?'+':'−')+fmt(e.amt)+'</td></tr>';
+      });
+      h+='</tbody></table></section>';
+    });
+    return h;
+  }
+
   document.addEventListener('click',function(ev){
     var t=ev.target.closest('[data-a]'); if(!t) return;
     var a=t.dataset.a;
@@ -400,6 +447,10 @@ details.card[open] summary{margin-bottom:8px}
         ui.confirmDel=id; render();
         setTimeout(function(){if(ui.confirmDel===id){ui.confirmDel=null;render();}},4000);
       }
+    }
+    else if(a==='pdf'){
+      $('#report').innerHTML=buildReport();
+      setTimeout(function(){try{window.print();}catch(e){backupMsg('الطباعة مش متاحة هنا.');}},80);
     }
     else if(a==='examples'){loadExamples();}
     else if(a==='clearEx'){state.entries=state.entries.filter(function(e){return !e.ex;});persist();render();}
