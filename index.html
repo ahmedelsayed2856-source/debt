@@ -121,6 +121,16 @@ details.card[open] summary{margin-bottom:8px}
 .seg.three span{padding:10px 4px;font-size:.9rem}
 .moveform{display:flex;flex-direction:column;gap:12px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px}
 .rem{display:block;color:var(--muted);font-size:.8rem}
+select{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;width:100%;min-width:0}
+select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+textarea.note{direction:rtl;text-align:right;font-size:1rem;min-height:96px;resize:vertical;line-height:1.6}
+.rn{white-space:pre-line}
+#tList{max-height:60vh;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:0 12px;background:var(--bg)}
+.tcat{font-family:var(--font-display);font-size:.95rem;margin:14px 0 2px;color:var(--accent);font-weight:600}
+.trow{display:grid;grid-template-columns:minmax(0,1fr) 6.5rem auto;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+.trow .tn{font-size:.9rem;overflow-wrap:anywhere}
+.trow input{padding:6px 8px}
+.tadd{display:grid;grid-template-columns:minmax(0,1fr) 7rem;gap:8px}
 </style>
 </head>
 <body>
@@ -152,6 +162,11 @@ details.card[open] summary{margin-bottom:8px}
         <label><input type="radio" name="type" value="borrowed"><span>استلفت (عليّ له)</span></label>
       </div>
     </div>
+    <div class="field">
+      <label for="fTest">تحليل طبي (اختياري)</label>
+      <select id="fTest" class="testsel"></select>
+      <p class="hint thint"></p>
+    </div>
     <div class="two">
       <div class="field">
         <label for="fAmt">المبلغ (ج.م)</label>
@@ -164,7 +179,7 @@ details.card[open] summary{margin-bottom:8px}
     </div>
     <div class="field">
       <label for="fNote">ملاحظة (اختياري)</label>
-      <input type="text" id="fNote" maxlength="120" placeholder="مثلاً: إيجار الشهر">
+      <textarea id="fNote" class="note" maxlength="300" rows="4" placeholder="مثلاً: تحليل سكر وصورة دم، أو أي تفاصيل تانية"></textarea>
     </div>
     <p class="msg" id="formMsg" role="alert"></p>
     <div class="btns"><button class="btn" type="submit">حفظ في الدفتر</button></div>
@@ -180,6 +195,19 @@ details.card[open] summary{margin-bottom:8px}
     <input type="text" class="search" id="search" placeholder="ابحث باسم الشخص" aria-label="بحث بالاسم">
     <div id="list" style="display:flex;flex-direction:column;gap:12px"></div>
   </section>
+
+  <details class="card" id="testsCard">
+    <summary>قائمة التحاليل والأسعار</summary>
+    <p class="hint">اكتب سعر كل تحليل مرة واحدة، وبعدها بيظهر جنب اسمه في القائمة المنسدلة وبيتجمع تلقائي في المبلغ. <span id="tCount"></span></p>
+    <input type="text" id="tSearch" placeholder="ابحث عن تحليل" aria-label="بحث في التحاليل">
+    <div id="tList"></div>
+    <div class="tadd">
+      <input type="text" id="tNewName" placeholder="اسم تحليل جديد" maxlength="80" aria-label="اسم التحليل الجديد">
+      <input type="text" class="num" id="tNewPrice" inputmode="decimal" placeholder="السعر" aria-label="سعر التحليل الجديد">
+    </div>
+    <div class="btns"><button class="btn ghost" type="button" data-a="tadd">إضافة تحليل</button></div>
+    <p class="msg" id="tMsg" role="status"></p>
+  </details>
 
   <details class="card">
     <summary>نسخة احتياطية واسترجاع</summary>
@@ -208,7 +236,7 @@ details.card[open] summary{margin-bottom:8px}
   function $(s){return document.querySelector(s);}
   function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
   var state={entries:[],updated:0};
-  var ui={open:new Set(),addFor:null,confirmDel:null,confirmWipe:false,q:''};
+  var ui={open:new Set(),addFor:null,confirmDel:null,confirmTest:null,confirmWipe:false,q:''};
   var dbDoc=null,downloads=null,saveTimer=null,saving=false,dirty=false,toastTimer=null;
 
   function fmt(n){
@@ -236,6 +264,107 @@ details.card[open] summary{margin-bottom:8px}
   function toast(t){
     var el=$('#toast'); el.textContent=t;
     clearTimeout(toastTimer); toastTimer=setTimeout(function(){el.textContent='';},2500);
+  }
+
+  /* medical tests */
+  var TKEY='debt-book-tests-v1';
+  var SEED=[
+    ['دم وتجلط',['صورة دم كاملة CBC','سرعة الترسيب ESR','فصيلة الدم و Rh','زمن النزف والتجلط','بروثرومبين PT و INR','PTT','عدد الشبكيات Retics','مسحة دم Blood film','فصل الهيموجلوبين','Coombs مباشر','Coombs غير مباشر','D-Dimer','فيبرينوجين Fibrinogen']],
+    ['سكر',['سكر صائم FBS','سكر فاطر PPBS','سكر عشوائي RBS','سكر تراكمي HbA1c','منحنى تحمل السكر GTT','إنسولين صائم','C-Peptide']],
+    ['كبد',['ALT (SGPT)','AST (SGOT)','فوسفاتيز قلوي ALP','GGT','بيليروبين كلي ومباشر','ألبومين','بروتين كلي','وظائف كبد كاملة']],
+    ['كلى وأملاح',['كرياتينين','يوريا','BUN','حمض يوريك','وظائف كلى كاملة','صوديوم Na','بوتاسيوم K','كالسيوم Ca','فوسفور','ماغنسيوم','كلوريد']],
+    ['دهون',['كوليسترول كلي','دهون ثلاثية TG','HDL','LDL','صورة دهون كاملة Lipid profile']],
+    ['هرمونات',['TSH','FT3','FT4','T3 الكلي','T4 الكلي','برولاكتين','FSH','LH','استراديول E2','بروجسترون','تستوستيرون كلي','تستوستيرون حر','كورتيزول','DHEA-S','AMH','PTH','هرمون النمو GH','17-OH بروجسترون','بيتا HCG كمي','اختبار حمل (بول)']],
+    ['فيتامينات وحديد',['فيتامين D','فيتامين B12','حمض الفوليك','حديد Serum Iron','TIBC','فيريتين Ferritin','زنك']],
+    ['قلب والتهابات',['CRP','hs-CRP','تروبونين Troponin I','CK-MB','CPK','LDH','NT-proBNP']],
+    ['مناعة وروماتيزم',['عامل روماتويد RF','ASO','ANA','Anti-dsDNA','Anti-CCP','C3','C4','IgE الكلي','IgA','IgG','IgM','Anti-TPO','Anti-TG']],
+    ['فيروسات وعدوى',['HBsAg','HBsAb','HBcAb','HCV Ab','HIV','HBV PCR','HCV PCR','فيدال Widal','بروسيلا Brucella','CMV IgM','CMV IgG','توكسوبلازما IgM','توكسوبلازما IgG','روبيلا IgM','روبيلا IgG','هيرس HSV','H. pylori Ag (براز)','H. pylori Ab']],
+    ['بول وبراز',['تحليل بول كامل','مزرعة بول','بروتين بول 24 ساعة','ميكروألبومين بول','كرياتينين بول 24 ساعة','تحليل براز كامل','دم خفي في البراز','مزرعة براز']],
+    ['مؤشرات أورام',['PSA الكلي','PSA الحر','CEA','CA 125','CA 15-3','CA 19-9','AFP']],
+    ['مزارع وأخرى',['مزرعة حلق','مزرعة دم','مسحة مهبلية','تحليل سائل منوي','مزرعة وحساسية']]
+  ];
+  var tests=[];
+  function seedTests(){
+    var out=[],i=0;
+    SEED.forEach(function(g){g[1].forEach(function(n){out.push({id:'t'+(++i),name:n,cat:g[0],price:null});});});
+    return out;
+  }
+  function loadTests(){
+    try{
+      var raw=localStorage.getItem(TKEY);
+      if(raw){
+        var a=JSON.parse(raw);
+        if(Array.isArray(a)){
+          var ok=a.filter(function(t){return t&&typeof t.id==='string'&&typeof t.name==='string'&&typeof t.cat==='string'&&(t.price===null||typeof t.price==='number');});
+          if(ok.length||!a.length) return ok;
+        }
+      }
+    }catch(e){}
+    return seedTests();
+  }
+  function saveTests(){try{localStorage.setItem(TKEY,JSON.stringify(tests));}catch(e){}}
+  function optionsHtml(){
+    var cats=[];
+    tests.forEach(function(t){if(cats.indexOf(t.cat)<0) cats.push(t.cat);});
+    var h='<option value="">— اختر تحليل —</option>';
+    cats.forEach(function(c){
+      h+='<optgroup label="'+esc(c)+'">';
+      tests.filter(function(t){return t.cat===c;}).forEach(function(t){
+        h+='<option value="'+esc(t.id)+'">'+esc(t.name)+(t.price!=null?' — '+fmt(t.price)+' ج.م':'')+'</option>';
+      });
+      h+='</optgroup>';
+    });
+    return h;
+  }
+  function fillSelects(){
+    var list=document.querySelectorAll('.testsel');
+    for(var i=0;i<list.length;i++) list[i].innerHTML=optionsHtml();
+  }
+  function renderTests(){
+    var q=($('#tSearch').value||'').trim().toLowerCase();
+    var cats=[];
+    tests.forEach(function(t){if(cats.indexOf(t.cat)<0) cats.push(t.cat);});
+    var h='';
+    cats.forEach(function(c){
+      var items=tests.filter(function(t){return t.cat===c&&(!q||t.name.toLowerCase().indexOf(q)!==-1);});
+      if(!items.length) return;
+      h+='<div class="tcat">'+esc(c)+'</div>';
+      items.forEach(function(t){
+        var sure=ui.confirmTest===t.id;
+        h+='<div class="trow"><span class="tn">'+esc(t.name)+'</span>'+
+          '<input type="text" class="num tprice" inputmode="decimal" data-id="'+esc(t.id)+'" value="'+(t.price==null?'':t.price)+'" placeholder="السعر" aria-label="سعر '+esc(t.name)+'">'+
+          '<button type="button" class="x'+(sure?' sure':'')+'" data-a="tdel" data-id="'+esc(t.id)+'">'+(sure?'تأكيد':'حذف')+'</button></div>';
+      });
+    });
+    $('#tList').innerHTML=h||'<p class="hint">مفيش تحليل بالاسم ده.</p>';
+    var missing=tests.filter(function(t){return t.price==null;}).length;
+    $('#tCount').textContent=tests.length+' تحليل'+(missing?' · '+missing+' من غير سعر':'');
+  }
+  function onPickTest(sel){
+    var id=sel.value; if(!id) return;
+    sel.value='';
+    var t=tests.filter(function(x){return x.id===id;})[0];
+    var form=sel.closest('form'); if(!t||!form) return;
+    var note=form.querySelector('textarea.note'),amt=form.querySelector('input.num'),hint=form.querySelector('.thint');
+    var cur=note.value.trim().replace(/[،,]\s*$/,'');
+    note.value=cur?cur+'، '+t.name:t.name;
+    var mt=form.querySelector('input[name="mtype"]:checked');
+    var isPay=!!mt&&mt.value==='pay';
+    if(t.price!=null&&!isPay){
+      var c=parseAmt(amt.value);
+      amt.value=round2((isNaN(c)?0:c)+t.price);
+      if(hint) hint.textContent='اتضاف «'+t.name+'» وسعره '+money(t.price)+' للمبلغ.';
+    }else if(isPay){
+      if(hint) hint.textContent='اتضاف «'+t.name+'» للملاحظة بس لأن النوع سداد.';
+    }else{
+      if(hint) hint.textContent='اتضاف «'+t.name+'» للملاحظة. سعره مش متسجل، حدده من قائمة التحاليل والأسعار.';
+    }
+  }
+  function onMType(radio){
+    var form=radio.closest('form.moveform'); if(!form) return;
+    var amt=form.querySelector('#mAmt'),pre=form.dataset.pre||'';
+    if(radio.value!=='pay'){ if(amt.value===pre) amt.value=''; }
+    else if(!amt.value){ amt.value=pre; }
   }
 
   /* storage */
@@ -278,7 +407,7 @@ details.card[open] summary{margin-bottom:8px}
       var id=(typeof e.id==='string'&&e.id)?e.id:uid();
       if(seen[id]) return; seen[id]=1;
       var date=(typeof e.date==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(e.date))?e.date:today();
-      var o={id:id,person:e.person.trim().replace(/\s+/g,' ').slice(0,60),amt:round2(e.amt),date:date,note:typeof e.note==='string'?e.note.slice(0,120):''};
+      var o={id:id,person:e.person.trim().replace(/\s+/g,' ').slice(0,60),amt:round2(e.amt),date:date,note:typeof e.note==='string'?e.note.slice(0,300):''};
       if(!o.person) return;
       if(e.kind==='pay') o.kind='pay';
       if(e.ex) o.ex=true;
@@ -328,11 +457,12 @@ details.card[open] summary{margin-bottom:8px}
       if(ui.addFor===p.name){
         var def=p.bal!==0?'pay':'lent';
         var opt=function(v,t){return '<label><input type="radio" name="mtype" value="'+v+'"'+(v===def?' checked':'')+'><span>'+t+'</span></label>';};
-        tools='<form class="moveform" data-p="'+esc(p.name)+'" autocomplete="off">'+
+        tools='<form class="moveform" data-p="'+esc(p.name)+'" data-pre="'+(p.bal!==0?Math.abs(p.bal):'')+'" autocomplete="off">'+
           '<div class="seg'+(p.bal!==0?' three':'')+'" role="radiogroup" aria-label="نوع الحركة">'+opt('lent','سلّفته تاني')+opt('borrowed','استلفت منه')+(p.bal!==0?opt('pay','سداد'):'')+'</div>'+
+          '<div class="field"><label for="mTest">تحليل طبي (اختياري)</label><select id="mTest" class="testsel">'+optionsHtml()+'</select><p class="hint thint"></p></div>'+
           '<div class="two"><div class="field"><label for="mAmt">المبلغ (ج.م)</label><input type="text" class="num" id="mAmt" inputmode="decimal" value="'+(p.bal!==0?Math.abs(p.bal):'')+'"></div>'+
           '<div class="field"><label for="mDate">التاريخ</label><input type="date" id="mDate" value="'+today()+'"></div></div>'+
-          '<div class="field"><label for="mNote">ملاحظة (اختياري)</label><input type="text" id="mNote" maxlength="120"></div>'+
+          '<div class="field"><label for="mNote">ملاحظة (اختياري)</label><textarea id="mNote" class="note" maxlength="300" rows="4"></textarea></div>'+
           '<p class="msg" role="alert"></p>'+
           '<div class="btns"><button class="btn" type="submit">حفظ الحركة</button><button class="btn ghost" type="button" data-a="addcancel">إلغاء</button></div></form>';
       }else{
@@ -386,6 +516,7 @@ details.card[open] summary{margin-bottom:8px}
     addEntry({id:uid(),person:name,amt:type==='lent'?amt:-amt,date:date,note:note});
     ui.open.add(name);
     $('#fAmt').value=''; $('#fNote').value=''; $('#fName').value='';
+    $('#addForm .thint').textContent='';
     toast('تم الحفظ: '+name+' · '+money(amt));
     render();
     $('#fName').focus();
@@ -407,7 +538,7 @@ details.card[open] summary{margin-bottom:8px}
     toast('تم الحفظ: '+name+' · '+money(v));
   }
   function exportText(){
-    return JSON.stringify({app:'debt-book',v:1,exported:new Date().toISOString(),entries:state.entries});
+    return JSON.stringify({app:'debt-book',v:2,exported:new Date().toISOString(),entries:state.entries,tests:tests});
   }
   function backupMsg(t){$('#backupMsg').textContent=t;}
   function loadExamples(){
@@ -500,6 +631,26 @@ details.card[open] summary{margin-bottom:8px}
       }
     }
     else if(a==='pdf'){printReport('');}
+    else if(a==='tadd'){
+      var nm=$('#tNewName').value.trim().replace(/\s+/g,' '),pr=$('#tNewPrice').value.trim(),tm=$('#tMsg');
+      if(!nm){tm.textContent='اكتب اسم التحليل.';return;}
+      if(tests.some(function(x){return x.name.toLowerCase()===nm.toLowerCase();})){tm.textContent='التحليل ده موجود بالفعل.';return;}
+      var pv=null;
+      if(pr){pv=parseAmt(pr); if(isNaN(pv)){tm.textContent='السعر لازم يكون رقم أكبر من صفر.';return;}}
+      tests.push({id:'u'+uid(),name:nm,cat:'أخرى',price:pv});
+      saveTests(); fillSelects(); $('#tSearch').value=''; renderTests();
+      $('#tNewName').value=''; $('#tNewPrice').value=''; tm.textContent='اتضاف: '+nm;
+    }
+    else if(a==='tdel'){
+      var tid=t.dataset.id;
+      if(ui.confirmTest===tid){
+        tests=tests.filter(function(x){return x.id!==tid;});
+        ui.confirmTest=null; saveTests(); fillSelects(); renderTests();
+      }else{
+        ui.confirmTest=tid; renderTests();
+        setTimeout(function(){if(ui.confirmTest===tid){ui.confirmTest=null;renderTests();}},4000);
+      }
+    }
     else if(a==='examples'){loadExamples();}
     else if(a==='clearEx'){state.entries=state.entries.filter(function(e){return !e.ex;});persist();render();}
     else if(a==='export'){
@@ -529,13 +680,25 @@ details.card[open] summary{margin-bottom:8px}
       if(!raw){backupMsg('الصق النسخة الأول.');return;}
       try{
         var d=JSON.parse(raw);
+        var tAdded=0;
+        if(d&&!Array.isArray(d)&&Array.isArray(d.tests)){
+          d.tests.forEach(function(t){
+            if(!t||typeof t.name!=='string') return;
+            var nm=t.name.trim(); if(!nm) return;
+            var pr=(typeof t.price==='number'&&t.price>0)?round2(t.price):null;
+            var ex=tests.filter(function(x){return x.name===nm;})[0];
+            if(ex){if(ex.price==null&&pr!=null){ex.price=pr;tAdded++;}}
+            else{tests.push({id:'u'+uid(),name:nm.slice(0,80),cat:(typeof t.cat==='string'&&t.cat)?t.cat.slice(0,40):'أخرى',price:pr});tAdded++;}
+          });
+          if(tAdded){saveTests();fillSelects();renderTests();}
+        }
         var incoming=clean(Array.isArray(d)?d:d.entries);
-        if(!incoming.length){backupMsg('مفيش بيانات صالحة في النص ده.');return;}
+        if(!incoming.length){backupMsg(tAdded?'اتضاف '+tAdded+' تحليل أو سعر.':'مفيش بيانات صالحة في النص ده.');return;}
         var have={}; state.entries.forEach(function(e){have[e.id]=1;});
         var added=incoming.filter(function(e){return !have[e.id];});
         state.entries=state.entries.concat(added);
         persist(); render(); $('#importBox').value='';
-        backupMsg('اتضاف '+added.length+' حركة.');
+        backupMsg('اتضاف '+added.length+' حركة'+(tAdded?' و'+tAdded+' تحليل أو سعر':'')+'.');
       }catch(e){backupMsg('النص مش نسخة صحيحة.');}
     }
     else if(a==='wipe'){
@@ -548,6 +711,21 @@ details.card[open] summary{margin-bottom:8px}
     if(ev.target.classList.contains('moveform')){ev.preventDefault();onMove(ev.target);}
   });
   $('#search').addEventListener('input',function(e){ui.q=e.target.value;render();});
+  $('#tSearch').addEventListener('input',renderTests);
+  document.addEventListener('change',function(ev){
+    var el=ev.target;
+    if(el.classList.contains('testsel')) onPickTest(el);
+    else if(el.name==='mtype') onMType(el);
+    else if(el.classList.contains('tprice')){
+      var t=tests.filter(function(x){return x.id===el.dataset.id;})[0]; if(!t) return;
+      var v=el.value.trim();
+      if(!v){t.price=null;}
+      else{var n=parseAmt(v); if(isNaN(n)){el.value=t.price==null?'':t.price;return;} t.price=n; el.value=n;}
+      saveTests(); fillSelects();
+      var missing=tests.filter(function(x){return x.price==null;}).length;
+      $('#tCount').textContent=tests.length+' تحليل'+(missing?' · '+missing+' من غير سعر':'');
+    }
+  });
 
   /* start */
   document.documentElement.dir='rtl';
@@ -555,6 +733,7 @@ details.card[open] summary{margin-bottom:8px}
   if(!window.claude){$('#btnExport').hidden=false;}
   if(navigator.storage&&navigator.storage.persist){navigator.storage.persist().catch(function(){});}
   if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}
+  tests=loadTests(); fillSelects(); renderTests();
   var local=readLocal();
   if(local){state.entries=clean(local.entries);state.updated=local.updated||0;}
   render(); setStatus('local');
